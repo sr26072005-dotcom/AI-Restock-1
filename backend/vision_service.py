@@ -21,13 +21,16 @@ model = YOLO(model_path)
 # Storage Bucket configuration
 BUCKET_NAME = "Details"
 
-def analyze_shelf(image_name, shop_id="UNKNOWN"):
+def analyze_shelf(image_name, shop_id="UNKNOWN", target_classes=None):
     """
     1. Downloads image from Supabase 'images/' folder.
     2. Runs AI detection with improved accuracy settings.
     3. Uploads verified image to Supabase 'validated images/' folder.
     4. Returns vision count and the public cloud URL.
     """
+    if target_classes is None:
+        target_classes = [39, 41, 73] # bottle, cup, refrigerator/box (defaults)
+
     # Create local temp paths
     temp_download = os.path.join(BASE_DIR, 'static', 'uploads', image_name)
     os.makedirs(os.path.dirname(temp_download), exist_ok=True)
@@ -58,14 +61,9 @@ def analyze_shelf(image_name, shop_id="UNKNOWN"):
         agnostic_nms=True # Better handling of overlapping boxes
     )
     
-    # Target classes for standard YOLOv8n (0: person, 39: bottle, 41: cup, etc.)
-    # We'll count 'bottle' (39) and 'cup' (41) as proxy for shelf items
-    # You can customize these IDs based on your specific product
-    target_classes = [39, 41, 73] # bottle, cup, refrigerator/box
-    
     detected_items = []
     for box in results[0].boxes:
-        if int(box.cls) in target_classes or len(target_classes) == 0:
+        if int(box.cls) in target_classes:
             detected_items.append(box)
     
     vision_count = len(detected_items)

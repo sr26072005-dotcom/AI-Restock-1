@@ -1,8 +1,40 @@
-import React, { useState } from 'react';
-import { MapPin, Search, CheckCircle, ArrowRight, ArrowLeft, ExternalLink, RefreshCw, Box, CheckSquare, Square } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  CheckCircle,
+  ArrowRight,
+  ExternalLink,
+  RefreshCw,
+  Box,
+  CheckSquare,
+  Square,
+  User,
+  Lock,
+  LayoutDashboard,
+  ClipboardList,
+  AlertTriangle,
+  TrendingUp,
+  ShoppingBag,
+  Bell,
+  Info,
+  Store,
+  Package,
+  Plus,
+  LogOut,
+} from 'lucide-react';
+
 import { clsx } from 'clsx';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
 type Step = 1 | 2 | 3 | 4;
+type View = 'dashboard' | 'audit' | 'shops' | 'products' | 'history';
 
 interface AuditData {
   shop_id: string;
@@ -18,33 +50,161 @@ interface AuditData {
   min_threshold: number;
   restock_qty: number;
   manager_email: string;
-  selected: boolean; // New: Selection state
+  selected: boolean;
 }
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = 'http://localhost:5000/api';
 
-function App() {
+export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [view, setView] = useState<View>('dashboard');
   const [currentStep, setCurrentStep] = useState<Step>(1);
-  const [region, setRegion] = useState("Chennai South");
-  const [product, setProduct] = useState("Dove Soap");
+
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  const [region, setRegion] = useState('Chennai South');
+  const [product, setProduct] = useState('Dove Soap');
+
   const [auditResults, setAuditResults] = useState<AuditData[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [shopsList, setShopsList] = useState<any[]>([]);
+  const [productsCatalog, setProductsCatalog] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  const regions = ['Chennai South', 'Chennai North'];
+
+  const [newShop, setNewShop] = useState({
+    shop_name: '',
+    region: 'Chennai South',
+    product: 'Dove Soap',
+    billing_count: 50,
+    min_threshold: 10,
+    shelf_image_name: 'test_shelf.jpg',
+    manager_email: '',
+    default_restock_qty: 30,
+  });
+
+  const [newProduct, setNewProduct] = useState({
+    name: '',
+    category: 'Personal Care',
+    detection_id: 39,
+    sku: '',
+    base_price: 0,
+  });
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchHistory();
+      fetchShops();
+      fetchProducts();
+    }
+  }, [isLoggedIn]);
+
+  const fetchShops = async () => {
+    console.log(`Fetching shops from ${API_BASE}/shops...`);
+    try {
+      const res = await fetch(`${API_BASE}/shops`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      console.log('Shops fetched successfully:', data);
+      setShopsList(data);
+    } catch (err) {
+      console.error('Failed to fetch shops:', err);
+      alert('Could not connect to backend to fetch shops. Is the Flask server running?');
+    }
+  };
+
+  const fetchProducts = async () => {
+    console.log(`Fetching products from ${API_BASE}/products...`);
+    try {
+      const res = await fetch(`${API_BASE}/products`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      console.log('Products fetched successfully:', data);
+      setProductsCatalog(data);
+    } catch (err) {
+      console.error('Failed to fetch products:', err);
+    }
+  };
+
+  const fetchHistory = async () => {
+    console.log(`Fetching history from ${API_BASE}/history...`);
+    setSyncingHistory(true);
+    try {
+      const res = await fetch(`${API_BASE}/history`);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      console.log('History fetched successfully:', data);
+      setHistory(data);
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    } finally {
+      setSyncingHistory(false);
+    }
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('Attempting login...');
+    if (loginEmail === 'Admin' && loginPassword === 'admin123') {
+      setIsLoggedIn(true);
+    } else {
+      alert('Invalid credentials');
+    }
+  };
 
   const startAudit = async () => {
+    console.log(`Starting audit for ${region} - ${product}...`);
     setCurrentStep(2);
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ region, product })
+        body: JSON.stringify({ region, product }),
       });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || `HTTP error! status: ${res.status}`);
+      }
       const data = await res.json();
-      setAuditResults(data.results);
+      console.log('Audit results received:', data);
+      setAuditResults(data.results || []);
       setCurrentStep(3);
-    } catch (err) {
-      alert("Error starting audit.");
+    } catch (err: any) {
+      console.error('Audit failed:', err);
+      alert(`Audit failed: ${err.message}`);
       setCurrentStep(1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const finalizeAudit = async () => {
+    const selectedShops = auditResults.filter((a) => a.selected);
+    if (!selectedShops.length) {
+      alert('Select at least one shop');
+      return;
+    }
+    console.log('Finalizing audit for shops:', selectedShops);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audit_data: selectedShops }),
+      });
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      console.log('Audit finalized successfully');
+      setCurrentStep(4);
+      fetchHistory();
+    } catch (err) {
+      console.error('Finalization failed:', err);
+      alert('Failed to finalize audit.');
     } finally {
       setLoading(false);
     }
@@ -56,166 +216,523 @@ function App() {
     setAuditResults(updated);
   };
 
-  const finalizeAudit = async () => {
-    const selectedShops = auditResults.filter(a => a.selected);
-    if (selectedShops.length === 0) {
-      alert("Please select at least one shop to finalize.");
-      return;
-    }
-
-    setLoading(true);
+  const addShop = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      await fetch(`${API_BASE}/finalize`, {
+      await fetch(`${API_BASE}/shops`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audit_data: selectedShops })
+        body: JSON.stringify(newShop),
       });
-      setCurrentStep(4);
+      fetchShops();
+      setShowForm(false);
+      setNewShop({
+        shop_name: '',
+        region: 'Chennai South',
+        product: 'Dove Soap',
+        billing_count: 50,
+        min_threshold: 10,
+        shelf_image_name: 'test_shelf.jpg',
+        manager_email: '',
+        default_restock_qty: 30,
+      });
     } catch (err) {
-      alert("Finalization failed.");
-    } finally {
-      setLoading(false);
+      console.error(err);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    if (status.includes("Critical")) return "var(--status-critical)";
-    if (status.includes("Need")) return "var(--status-warning)";
-    return "var(--status-healthy)";
+  const addProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await fetch(`${API_BASE}/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct),
+      });
+      fetchProducts();
+      setShowForm(false);
+      setNewProduct({
+        name: '',
+        category: 'Personal Care',
+        detection_id: 39,
+        sku: '',
+        base_price: 0,
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  return (
-    <div className="dashboard-container">
-      {/* 4-STAGE STEPPER */}
-      <div className="stepper">
-        {[1, 2, 3, 4].map((s) => (
-          <div key={s} className={clsx("step-item", currentStep >= s && "active")}>
-            <div className="step-num">{s}</div>
-            <div className="step-label">
-              {s === 1 && "Initialization"}
-              {s === 2 && "AI Visual Sweep"}
-              {s === 3 && "Review & Control"}
-              {s === 4 && "Execution"}
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-10">
+        <div className="bg-white rounded-3xl shadow-xl p-10 w-full max-w-md">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="bg-blue-600 p-3 rounded-xl text-white">
+              <Box />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">AuditAI</h1>
+              <p className="text-slate-500 text-sm">Inventory Intelligence</p>
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className="content-area">
-        {/* STAGE 1: INITIALIZATION */}
-        {currentStep === 1 && (
-          <div className="card selection-card">
-            <h1>Regional Audit Command</h1>
-            <p style={{ color: 'var(--text-muted)' }}>Configure the regional audit. System will notify managers upon initialization.</p>
-            
-            <div className="form-group" style={{ marginTop: '2rem' }}>
-              <label><MapPin size={16} /> Target Region</label>
-              <select value={region} onChange={(e) => setRegion(e.target.value)}>
-                <option>Chennai South</option>
-                <option>Chennai North</option>
-              </select>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="text-sm font-semibold block mb-2">Username</label>
+              <div className="border rounded-xl px-4 py-3 flex items-center gap-2">
+                <User size={18} />
+                <input
+                  className="outline-none w-full"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="Admin"
+                  required
+                />
+              </div>
             </div>
-
-            <div className="form-group">
-              <label><Search size={16} /> Product Category</label>
-              <select value={product} onChange={(e) => setProduct(e.target.value)}>
-                <option>Dove Soap</option>
-                <option>Lux Body Wash</option>
-              </select>
+            <div>
+              <label className="text-sm font-semibold block mb-2">Password</label>
+              <div className="border rounded-xl px-4 py-3 flex items-center gap-2">
+                <Lock size={18} />
+                <input
+                  type="password"
+                  className="outline-none w-full"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="admin123"
+                  required
+                />
+              </div>
             </div>
-
-            <button className="primary big" onClick={startAudit}>
-              Start AI Audit & Notify <ArrowRight size={18} />
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white rounded-xl py-3 font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition"
+            >
+              Login <ArrowRight size={18} />
             </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen bg-slate-100">
+      <aside className="w-72 bg-slate-950 text-white p-6 flex flex-col fixed h-full">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="bg-blue-600 p-2 rounded-lg">
+            <Box size={22} />
+          </div>
+          <h2 className="text-2xl font-bold">AuditAI</h2>
+        </div>
+        <div className="space-y-2 flex-1">
+          <button
+            onClick={() => { setView('dashboard'); setShowForm(false); }}
+            className={clsx(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition',
+              view === 'dashboard' ? 'bg-blue-600' : 'hover:bg-slate-800'
+            )}
+          >
+            <LayoutDashboard size={18} /> Dashboard
+          </button>
+          <button
+            onClick={() => { setView('audit'); setShowForm(false); }}
+            className={clsx(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition',
+              view === 'audit' ? 'bg-blue-600' : 'hover:bg-slate-800'
+            )}
+          >
+            <ClipboardList size={18} /> Run Audit
+          </button>
+          <button
+            onClick={() => { setView('shops'); setShowForm(false); }}
+            className={clsx(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition',
+              view === 'shops' ? 'bg-blue-600' : 'hover:bg-slate-800'
+            )}
+          >
+            <Store size={18} /> Shops
+          </button>
+          <button
+            onClick={() => { setView('products'); setShowForm(false); }}
+            className={clsx(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition',
+              view === 'products' ? 'bg-blue-600' : 'hover:bg-slate-800'
+            )}
+          >
+            <Package size={18} /> Products
+          </button>
+          <button
+            onClick={() => { setView('history'); setShowForm(false); }}
+            className={clsx(
+              'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition',
+              view === 'history' ? 'bg-blue-600' : 'hover:bg-slate-800'
+            )}
+          >
+            <TrendingUp size={18} /> History
+          </button>
+        </div>
+        <button
+          onClick={() => setIsLoggedIn(false)}
+          className="mt-auto flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 transition rounded-xl py-3 font-semibold"
+        >
+          <LogOut size={18} /> Logout
+        </button>
+      </aside>
+
+      <main className="flex-1 p-8 ml-72">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">
+              {view.charAt(0).toUpperCase() + view.slice(1)} Management
+            </h1>
+            <p className="text-slate-500 mt-1">AI-powered inventory auditing.</p>
+          </div>
+          <button
+            onClick={fetchHistory}
+            className="bg-white border px-5 py-3 rounded-xl flex items-center gap-2 font-semibold shadow-sm hover:bg-slate-50 transition"
+          >
+            <RefreshCw size={18} className={clsx(syncingHistory && 'animate-spin')} />
+            Refresh Data
+          </button>
+        </div>
+
+        {view === 'dashboard' && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                  <ShoppingBag className="text-blue-600" />
+                  <span className="font-semibold text-slate-500">Total Audits</span>
+                </div>
+                <h2 className="text-3xl font-bold">{history.length}</h2>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                  <AlertTriangle className="text-red-500" />
+                  <span className="font-semibold text-slate-500">Phantom Stock</span>
+                </div>
+                <h2 className="text-3xl font-bold">{history.filter(h => h.status === 'Phantom Stock').length}</h2>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                  <CheckCircle className="text-green-600" />
+                  <span className="font-semibold text-slate-500">Healthy Stock</span>
+                </div>
+                <h2 className="text-3xl font-bold">{history.filter(h => h.status === 'Healthy' || h.status === 'Stock Full').length}</h2>
+              </div>
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                  <Bell className="text-orange-500" />
+                  <span className="font-semibold text-slate-500">Restock Needed</span>
+                </div>
+                <h2 className="text-3xl font-bold">{history.filter(h => h.status === 'Need Stock').length}</h2>
+              </div>
+            </div>
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold">Recent Audit Trends</h3>
+                <Info size={18} className="text-slate-400" />
+              </div>
+              <ResponsiveContainer width="100%" height={350}>
+                <AreaChart data={[...history].reverse().slice(-10)}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="shop_name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                  <Area type="monotone" dataKey="vision_count" stroke="#2563eb" fill="#93c5fd" fillOpacity={0.4} />
+                  <Area type="monotone" dataKey="billing_count" stroke="#94a3b8" fill="#e2e8f0" fillOpacity={0.2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        )}
+
+        {view === 'audit' && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Regional Vision Sweep</h2>
+              <div className="bg-blue-100 text-blue-700 px-4 py-2 rounded-xl font-bold text-sm">
+                Step {currentStep} / 4
+              </div>
+            </div>
+            {currentStep === 1 && (
+              <div className="max-w-xl space-y-6">
+                <div>
+                  <label className="block mb-2 font-semibold">Target Region</label>
+                  <select value={region} onChange={(e) => setRegion(e.target.value)} className="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
+                    {regions.map((r) => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block mb-2 font-semibold">Product Category</label>
+                  <select value={product} onChange={(e) => setProduct(e.target.value)} className="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500">
+                    {productsCatalog.map((p) => <option key={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
+                <button onClick={startAudit} className="bg-blue-600 text-white px-8 py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg">
+                  Launch AI Scan
+                </button>
+              </div>
+            )}
+            {currentStep === 2 && (
+              <div className="text-center py-20">
+                <RefreshCw className="animate-spin mx-auto mb-6 text-blue-600" size={64} />
+                <h3 className="text-2xl font-bold mb-2">Analyzing Shelf Infrastructure</h3>
+                <p className="text-slate-500">YOLOv8 vision models are validating stock levels in {region}.</p>
+              </div>
+            )}
+            {currentStep === 3 && (
+              <div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-slate-500 text-sm">
+                        <th className="text-left py-4">Action</th>
+                        <th className="text-left py-4">Shop Name</th>
+                        <th className="text-left py-4">AI Status</th>
+                        <th className="text-left py-4">Vision Count</th>
+                        <th className="text-left py-4">Restock Qty</th>
+                        <th className="text-left py-4">Proof</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditResults.map((entry, i) => (
+                        <tr key={i} className={clsx("border-b hover:bg-slate-50 transition", entry.selected && "bg-blue-50/50")}>
+                          <td className="py-4">
+                            <button onClick={() => updateEntry(i, 'selected', !entry.selected)}>
+                              {entry.selected ? <CheckSquare className="text-blue-600" /> : <Square className="text-slate-400" />}
+                            </button>
+                          </td>
+                          <td className="py-4 font-bold text-slate-700">{entry.shop_name}</td>
+                          <td className="py-4">
+                            <span className={clsx("px-3 py-1 rounded-lg text-xs font-bold", 
+                              entry.status === 'Healthy' ? "bg-green-100 text-green-700" :
+                              entry.status === 'Phantom Stock' ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"
+                            )}>{entry.status}</span>
+                          </td>
+                          <td className="py-4">
+                            <input type="number" value={entry.vision_count} onChange={(e) => updateEntry(i, 'vision_count', Number(e.target.value))} className="border rounded-lg px-3 py-2 w-20 text-center font-bold" />
+                          </td>
+                          <td className="py-4">
+                            <input type="number" value={entry.restock_qty} onChange={(e) => updateEntry(i, 'restock_qty', Number(e.target.value))} className="border rounded-lg px-3 py-2 w-20 text-center font-bold text-blue-600" />
+                          </td>
+                          <td className="py-4">
+                            <a href={entry.proof_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 font-bold">
+                              <ExternalLink size={14} /> Proof
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-8 flex justify-end gap-4">
+                  <button onClick={() => setCurrentStep(1)} className="px-6 py-3 font-bold text-slate-500 hover:text-slate-700 transition">Cancel</button>
+                  <button onClick={finalizeAudit} disabled={loading} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition shadow-lg">
+                    Finalize Stock Allocation
+                  </button>
+                </div>
+              </div>
+            )}
+            {currentStep === 4 && (
+              <div className="text-center py-20">
+                <CheckCircle className="mx-auto text-green-600 mb-6" size={80} />
+                <h2 className="text-3xl font-bold mb-3">Audit Dispatched</h2>
+                <p className="text-slate-500 mb-8">Inventory reconciliations have been logged and manager notifications sent.</p>
+                <button onClick={() => { setCurrentStep(1); setView('dashboard'); }} className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg">
+                  Back to Dashboard
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* STAGE 2: AI VISUAL SWEEP */}
-        {currentStep === 2 && (
-          <div className="card loading-card">
-            <RefreshCw className="spin" size={64} color="var(--primary)" />
-            <h2>Running AI Vision Sweep...</h2>
-            <p>Gathering billing statements and shelf images from the cloud.</p>
-            <div className="progress-bar-container">
-              <div className="progress-bar-fill"></div>
+        {view === 'shops' && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Retail Store Network</h2>
+              <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700 transition shadow-md">
+                <Plus size={18} /> {showForm ? 'Close Form' : 'Register Store'}
+              </button>
             </div>
-          </div>
-        )}
-
-        {/* STAGE 3: REVIEW & CONTROL */}
-        {currentStep === 3 && (
-          <div className="card review-card" style={{ maxWidth: '100%' }}>
-            <div className="header-actions">
-              <button className="btn-text" onClick={() => setCurrentStep(1)}><ArrowLeft size={16} /> Reset Audit</button>
-              <h2>AI Audit Results: {region}</h2>
-            </div>
-            
-            <p>Select the shops you want to restock. AI has suggested selections based on stock levels.</p>
-
-            <div className="audit-table-container">
-              <table className="history-table">
+            {showForm && (
+              <form onSubmit={addShop} className="bg-slate-50 p-6 rounded-2xl mb-8 border border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Shop Name</label>
+                    <input value={newShop.shop_name} onChange={(e) => setNewShop({ ...newShop, shop_name: e.target.value })} className="w-full border rounded-xl px-4 py-3" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Region</label>
+                    <select value={newShop.region} onChange={(e) => setNewShop({ ...newShop, region: e.target.value })} className="w-full border rounded-xl px-4 py-3">
+                      {regions.map(r => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Product</label>
+                    <select value={newShop.product} onChange={(e) => setNewShop({ ...newShop, product: e.target.value })} className="w-full border rounded-xl px-4 py-3">
+                      {productsCatalog.map(p => <option key={p.name}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Manager Email</label>
+                    <input type="email" value={newShop.manager_email} onChange={(e) => setNewShop({ ...newShop, manager_email: e.target.value })} className="w-full border rounded-xl px-4 py-3" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Billing Count</label>
+                      <input type="number" value={newShop.billing_count} onChange={(e) => setNewShop({ ...newShop, billing_count: Number(e.target.value) })} className="w-full border rounded-xl px-4 py-3" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Min Threshold</label>
+                      <input type="number" value={newShop.min_threshold} onChange={(e) => setNewShop({ ...newShop, min_threshold: Number(e.target.value) })} className="w-full border rounded-xl px-4 py-3" />
+                    </div>
+                  </div>
+                </div>
+                <button type="submit" className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition">
+                  Commit Store Registry
+                </button>
+              </form>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full">
                 <thead>
-                  <tr>
-                    <th><CheckSquare size={16} /></th>
-                    <th>Shop Name</th>
-                    <th>AI Status</th>
-                    <th>Vision Count</th>
-                    <th>Delivering Qty</th>
-                    <th>Payment</th>
-                    <th>Proof</th>
+                  <tr className="border-b text-slate-500 text-sm">
+                    <th className="text-left py-4">Store Name</th>
+                    <th className="text-left py-4">Region</th>
+                    <th className="text-left py-4">Target Product</th>
+                    <th className="text-left py-4">Billing</th>
+                    <th className="text-left py-4">Threshold</th>
+                    <th className="text-left py-4">Manager</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {auditResults.map((entry, i) => (
-                    <tr key={i} className={clsx(entry.selected && "row-selected")}>
-                      <td>
-                        <button className="btn-icon" onClick={() => updateEntry(i, 'selected', !entry.selected)}>
-                          {entry.selected ? <CheckSquare size={20} color="var(--primary)" /> : <Square size={20} color="#ccc" />}
-                        </button>
+                  {shopsList.map((shop, i) => (
+                    <tr key={i} className="border-b hover:bg-slate-50 transition">
+                      <td className="py-4 font-bold text-slate-700">{shop.shop_name}</td>
+                      <td className="py-4 text-slate-500">{shop.region}</td>
+                      <td className="py-4 text-slate-600 font-medium">{shop.product}</td>
+                      <td className="py-4 font-bold">{shop.billing_count}</td>
+                      <td className="py-4 text-orange-600 font-bold">{shop.min_threshold}</td>
+                      <td className="py-4 text-slate-400 text-xs">{shop.manager_email}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {view === 'products' && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold">Product Intelligence Catalog</h2>
+              <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700 transition shadow-md">
+                <Plus size={18} /> {showForm ? 'Close Form' : 'Add Product'}
+              </button>
+            </div>
+            {showForm && (
+              <form onSubmit={addProduct} className="bg-slate-50 p-6 rounded-2xl mb-8 border border-slate-200">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Product Name</label>
+                    <input value={newProduct.name} onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })} className="w-full border rounded-xl px-4 py-3" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Category</label>
+                    <select value={newProduct.category} onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })} className="w-full border rounded-xl px-4 py-3">
+                      <option>Personal Care</option>
+                      <option>Beverages</option>
+                      <option>Household</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">YOLO Detection ID</label>
+                    <input type="number" value={newProduct.detection_id} onChange={(e) => setNewProduct({ ...newProduct, detection_id: Number(e.target.value) })} className="w-full border rounded-xl px-4 py-3" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">SKU Code</label>
+                    <input value={newProduct.sku} onChange={(e) => setNewProduct({ ...newProduct, sku: e.target.value })} className="w-full border rounded-xl px-4 py-3" placeholder="SKU-XXXX" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Base Price (₹)</label>
+                    <input type="number" value={newProduct.base_price} onChange={(e) => setNewProduct({ ...newProduct, base_price: Number(e.target.value) })} className="w-full border rounded-xl px-4 py-3" />
+                  </div>
+                </div>
+                <button type="submit" className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition">
+                  Save Product Definition
+                </button>
+              </form>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-slate-500 text-sm">
+                    <th className="text-left py-4">Product Name</th>
+                    <th className="text-left py-4">Category</th>
+                    <th className="text-left py-4">Detection ID</th>
+                    <th className="text-left py-4">SKU</th>
+                    <th className="text-left py-4">Base Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productsCatalog.map((prod, i) => (
+                    <tr key={i} className="border-b hover:bg-slate-50 transition">
+                      <td className="py-4 font-bold text-slate-700">{prod.name}</td>
+                      <td className="py-4"><span className="bg-slate-100 px-3 py-1 rounded-lg text-xs font-bold">{prod.category}</span></td>
+                      <td className="py-4"><code className="bg-slate-100 px-2 py-1 rounded text-sm text-blue-600">{prod.detection_id}</code></td>
+                      <td className="py-4 text-slate-500">{prod.sku || 'N/A'}</td>
+                      <td className="py-4 font-bold text-slate-800">₹{prod.base_price}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {view === 'history' && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+            <h2 className="text-2xl font-bold mb-8">System Audit Log</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-slate-500 text-sm">
+                    <th className="text-left py-4">Store</th>
+                    <th className="text-left py-4">Product</th>
+                    <th className="text-left py-4">Final Status</th>
+                    <th className="text-left py-4">Vision Count</th>
+                    <th className="text-left py-4">Variance</th>
+                    <th className="text-left py-4">Timestamp</th>
+                    <th className="text-left py-4">Proof</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((item, i) => (
+                    <tr key={i} className="border-b hover:bg-slate-50 transition text-sm">
+                      <td className="py-4 font-bold text-slate-700">{item.shop_name}</td>
+                      <td className="py-4 text-slate-600">{item.product}</td>
+                      <td className="py-4">
+                        <span className={clsx("px-3 py-1 rounded-lg text-xs font-bold", 
+                          item.status === 'Healthy' ? "bg-green-100 text-green-700" :
+                          item.status === 'Phantom Stock' ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"
+                        )}>{item.status}</span>
                       </td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{entry.shop_name}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ID: {entry.shop_id}</div>
-                      </td>
-                      <td>
-                        <span className="badge" style={{ backgroundColor: getStatusColor(entry.status), color: '#fff' }}>
-                          {entry.status}
+                      <td className="py-4 font-bold">{item.vision_count}</td>
+                      <td className="py-4">
+                        <span className={clsx("font-bold", item.variance < 0 ? "text-red-500" : "text-green-500")}>
+                          {item.variance > 0 ? `+${item.variance}` : item.variance}
                         </span>
                       </td>
-                      <td>
-                        <input 
-                          type="number" 
-                          className="table-input"
-                          value={entry.vision_count} 
-                          onChange={(e) => updateEntry(i, 'vision_count', parseInt(e.target.value))}
-                        />
-                      </td>
-                      <td>
-                        <div className="restock-input-wrap">
-                          <Box size={14} />
-                          <input 
-                            type="number" 
-                            min="10"
-                            className="table-input primary-input"
-                            value={entry.restock_qty} 
-                            onChange={(e) => updateEntry(i, 'restock_qty', parseInt(e.target.value))}
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <select 
-                          className="minimal-select"
-                          value={entry.payment_method} 
-                          onChange={(e) => updateEntry(i, 'payment_method', e.target.value)}
-                        >
-                          <option>Net Banking</option>
-                          <option>Corporate Credit</option>
-                          <option>UPI/Digital</option>
-                        </select>
-                      </td>
-                      <td>
-                        <a href={entry.proof_url} target="_blank" rel="noreferrer" className="proof-link">
-                          <ExternalLink size={14} /> View
+                      <td className="py-4 text-slate-400">{new Date(item.timestamp).toLocaleString()}</td>
+                      <td className="py-4">
+                        <a href={item.proof_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 font-bold">
+                          <ExternalLink size={14} /> Open
                         </a>
                       </td>
                     </tr>
@@ -223,58 +740,9 @@ function App() {
                 </tbody>
               </table>
             </div>
-
-            <div className="finalize-footer">
-              <div className="summary-info">
-                <span>Shops Selected: <b>{auditResults.filter(a => a.selected).length}</b></span>
-              </div>
-              <button className="primary" onClick={finalizeAudit} disabled={loading}>
-                Finalize & Allocate Stock <CheckCircle size={18} />
-              </button>
-            </div>
           </div>
         )}
-
-        {/* STAGE 4: EXECUTION */}
-        {currentStep === 4 && (
-          <div className="card success-card">
-            <CheckCircle size={80} color="var(--status-healthy)" />
-            <h2>Stock Successfully Allocated</h2>
-            <p>Finalized audit logs saved to cloud. Allocation emails dispatched to selected managers.</p>
-            <div className="success-actions">
-              <button className="primary" onClick={() => setCurrentStep(1)}>Initiate New Cycle</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        .stepper { display: flex; justify-content: space-around; margin-bottom: 2rem; background: #fff; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-        .step-item { display: flex; flex-direction: column; align-items: center; opacity: 0.2; transform: scale(0.9); transition: all 0.4s ease; }
-        .step-item.active { opacity: 1; transform: scale(1); color: var(--primary); }
-        .step-num { width: 40px; height: 40px; border-radius: 50%; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-weight: 800; margin-bottom: 0.5rem; }
-        .step-item.active .step-num { background: var(--primary); color: white; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3); }
-        .step-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-        
-        .selection-card { max-width: 480px; margin: 2rem auto; text-align: center; padding: 3rem; border-top: 5px solid var(--primary); }
-        .form-group label { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; font-weight: 800; color: var(--text-muted); margin-bottom: 8px; }
-        .primary.big { width: 100%; padding: 1.25rem; font-size: 1.1rem; margin-top: 2rem; border-radius: 12px; }
-        
-        .row-selected { background-color: #f0f7ff !important; }
-        .btn-icon { background: none; border: none; cursor: pointer; padding: 0; }
-        .table-input { width: 60px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; text-align: center; font-weight: 700; }
-        .primary-input { border-color: var(--primary); color: var(--primary); }
-        .restock-input-wrap { display: flex; align-items: center; gap: 6px; }
-        
-        .progress-bar-container { width: 100%; height: 6px; background: #e2e8f0; border-radius: 10px; margin-top: 2rem; overflow: hidden; }
-        .progress-bar-fill { width: 30%; height: 100%; background: var(--primary); animation: slide 1.5s infinite ease-in-out; }
-        @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
-        
-        .spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
+      </main>
     </div>
   );
 }
-
-export default App;
