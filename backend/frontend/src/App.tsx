@@ -871,8 +871,13 @@ export default function App() {
                   <button onClick={printAudit} className="flex items-center gap-3 px-8 py-4 bg-white border border-slate-200 rounded-2xl font-black text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
                     <Printer size={20} /> Print Audit Results
                   </button>
-                  <button onClick={finalizeAudit} className="flex items-center gap-3 px-10 py-4 bg-green-600 hover:bg-green-700 text-white rounded-2xl font-black transition-all shadow-xl shadow-green-600/20 active:scale-95">
-                    <CheckCircle2 size={20} /> Finalize & Dispatch Orders
+                  <button 
+                    onClick={finalizeAudit} 
+                    disabled={loading}
+                    className="flex items-center gap-3 px-10 py-4 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-2xl font-black transition-all shadow-xl shadow-green-600/20 active:scale-95"
+                  >
+                    {loading ? <RefreshCw className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                    {loading ? 'Processing Orders...' : 'Finalize & Dispatch Orders'}
                   </button>
                 </div>
               </div>
