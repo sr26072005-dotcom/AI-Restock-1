@@ -1,0 +1,6 @@
+path: C:\Users\Sridhar Subbaiya\OneDrive\Desktop\Yolo_Model
+train: train/images
+val: valid/images
+
+names: 
+  0: Dove`1
